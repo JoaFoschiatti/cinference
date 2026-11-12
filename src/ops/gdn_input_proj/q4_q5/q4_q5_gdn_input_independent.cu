@@ -1,3 +1,5 @@
+// Modified by JoaFoschiatti for Cinference sm_86: K-split MMA for the Q5 value/z side.
+
 #include "core/weight.h"
 #include "ops/gdn_input_proj/q4_q5/q4_q5_gdn_input_kernels.h"
 
@@ -8,6 +10,7 @@
 #include "ops/linear/q4/q4_ksplit_strided_store.cuh"
 #include "ops/linear/q4/q4_rowsplit_gemm_simt.cuh"
 #include "ops/linear/q4/q4_rowsplit_gemv.cuh"
+#include "ops/linear/q5/q5_ksplit_mma.cuh"
 #include "ops/linear/q5/q5_rowsplit_gemm_simt.cuh"
 #include "ops/linear/q5/q5_rowsplit_gemv.cuh"
 #include "ops/linear/q5/q5_rowsplit_rowblock_small_t.cuh"
@@ -243,12 +246,60 @@ void launch_q5_simt_cols(const Tensor& x, const Weight& weight, Tensor& value, T
     CUDA_CHECK(cudaGetLastError());
 }
 
+struct Q5GdnValueZStore {
+    __nv_bfloat16* value;
+    __nv_bfloat16* z;
+    std::int32_t value_ld;
+
+    __device__ __forceinline__ void store(int row, int col, float value_f, int live) const {
+        if (col >= live) { return; }
+        if (row < kValueRows) {
+            value[static_cast<std::int64_t>(col) * value_ld + row] = __float2bfloat16(value_f);
+        } else {
+            z[static_cast<std::int64_t>(col) * kZRows + row - kValueRows] = __float2bfloat16(value_f);
+        }
+    }
+
+    __device__ __forceinline__ void operator()(int row, int col, float4 sum, int live) const {
+        store(row, col, sum.x, live);
+        store(row + 8, col, sum.z, live);
+        store(row, col + 1, sum.y, live);
+        store(row + 8, col + 1, sum.w, live);
+    }
+};
+
+template <int TileCols>
+void launch_q5_ksplit(const Tensor& x, const Weight& weight, Tensor& value, Tensor& z,
+                      cudaStream_t stream) {
+    using Geometry = Q5LinearGeometry<kValueZRows, kHidden>;
+    const Q5GdnValueZStore store{static_cast<__nv_bfloat16*>(value.data),
+                                 static_cast<__nv_bfloat16*>(z.data),
+                                 static_cast<std::int32_t>(value.nb[1] / sizeof(__nv_bfloat16))};
+    q5_ksplit_mma_kernel<Geometry, TileCols, TileCols, Q5GdnValueZStore>
+        <<<kValueZRows / Q5KSplitMmaSchedule::kRowsPerCta, Q5KSplitMmaSchedule::kThreads, 0,
+           stream>>>(static_cast<const __nv_bfloat16*>(x.data),
+                     static_cast<const std::uint8_t*>(weight.qdata),
+                     static_cast<const std::uint8_t*>(weight.qhigh),
+                     static_cast<const std::uint8_t*>(weight.scales), store, x.ne[1]);
+    CUDA_CHECK(cudaGetLastError());
+}
+
 void launch_q5(const Tensor& x, const Weight& weight, Tensor& value, Tensor& z,
                cudaStream_t stream) {
     if (x.ne[1] == 1) {
         launch_q5_gemv(x, weight, value, z, stream);
         return;
     }
+#if NINFER_COMPUTE_CAPABILITY == 86
+    if (x.ne[1] >= 5 && x.ne[1] <= 8) {
+        launch_q5_ksplit<8>(x, weight, value, z, stream);
+        return;
+    }
+    if (x.ne[1] >= 9 && x.ne[1] <= 12) {
+        launch_q5_ksplit<16>(x, weight, value, z, stream);
+        return;
+    }
+#endif
     if (x.ne[1] <= 6) {
         launch_q5_split4_exact(x, weight, value, z, stream);
         return;

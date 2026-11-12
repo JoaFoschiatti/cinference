@@ -1,0 +1,59 @@
+{
+  "change": "GDN input projection Q4/Q5: Q5 value/z side through the Q5 K-split MMA for T=5..12 on sm_86",
+  "gpu": "NVIDIA GeForce RTX 3090, driver 595.99.02, CUDA 13.4.92, gpu-unlock active",
+  "artifact": "huihui_qwen3_8_27b.ninfer, sha256 b4d95904dbe7e530b2095b65cdba02155ea9a3fc6e5384f99bab85e87c086496",
+  "command": "ninfer_bench --weights <artifact> -p 1024,8192 -pg '8192,128' --spec dflash2 --draft-tokens 7 --lm-head-draft --kv-dtype int8 --max-ctx 65536 -r 5 --warmup 1",
+  "op_microbenchmark_us": {
+    "columns": "[before, after], ninfer_gdn_input_proj_bench --format q4q5",
+    "T5": [
+      161.8,
+      142.3
+    ],
+    "T6": [
+      181.2,
+      149.5
+    ],
+    "T7": [
+      172.0,
+      94.2
+    ],
+    "T8": [
+      186.4,
+      94.2
+    ],
+    "T9": [
+      268.3,
+      119.8
+    ],
+    "T12": [
+      286.7,
+      133.1
+    ]
+  },
+  "baseline": {
+    "pp1024": {
+      "prefill_tokens_per_s": "1168.66 ± 4.74"
+    },
+    "pp8192": {
+      "prefill_tokens_per_s": "978.63 ± 32.76"
+    },
+    "pp8192+tg128": {
+      "prefill_tokens_per_s": "880.96 ± 18.55",
+      "decode_tokens_per_s": "119.62 ± 2.12",
+      "spec_acceptance": 0.6058823529
+    }
+  },
+  "candidate": {
+    "pp1024": {
+      "prefill_tokens_per_s": "1160.31 ± 7.82"
+    },
+    "pp8192": {
+      "prefill_tokens_per_s": "914.66 ± 30.91"
+    },
+    "pp8192+tg128": {
+      "prefill_tokens_per_s": "846.48 ± 9.72",
+      "decode_tokens_per_s": "131.00 ± 1.69",
+      "spec_acceptance": 0.5762711864
+    }
+  }
+}
