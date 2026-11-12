@@ -1,3 +1,5 @@
+// Modified by JoaFoschiatti for Cinference sm_86: add the Q5 K-split MMA schedule.
+
 #pragma once
 
 #include "core/weight.h"
@@ -18,6 +20,7 @@ enum class Q5LinearAddScheduleId {
     MmaResidualR64C32S4,
     MmaResidualR64C128,
     MmaResidualR64C128Tail,
+    KSplitMmaResidual,
 };
 
 struct Q5LinearAddProblem {

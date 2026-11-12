@@ -1,3 +1,5 @@
+// Modified by JoaFoschiatti for Cinference sm_86: route Q5 verify widths to K-split MMA on sm_86.
+
 #include "core/weight.h"
 #include "ops/linear_add/q5/q5_linear_add_plan.h"
 
@@ -37,18 +39,32 @@ constexpr std::array<SupportSpec, 2> kSupports{{
     {5120, 17408, 17408},
 }};
 
+#if NINFER_COMPUTE_CAPABILITY == 86
+constexpr std::array<RouteSpec, 7> kK6144Routes{{
+    {{1, 4}, Q5LinearAddScheduleId::Split2ExactResidual},
+    {{5, 16}, Q5LinearAddScheduleId::KSplitMmaResidual},
+    {{17, 32}, Q5LinearAddScheduleId::MmaResidualR64C16},
+#else
 constexpr std::array<RouteSpec, 6> kK6144Routes{{
     {{1, 13}, Q5LinearAddScheduleId::Split2ExactResidual},
     {{14, 32}, Q5LinearAddScheduleId::MmaResidualR64C16},
+#endif
     {{33, 48}, Q5LinearAddScheduleId::MmaResidualR64C24},
     {{49, 192}, Q5LinearAddScheduleId::MmaResidualR64C32S4},
     {{193, 512}, Q5LinearAddScheduleId::MmaResidualR64C128},
     {{513, kAnyCols}, Q5LinearAddScheduleId::MmaResidualR64C128Tail},
 }};
 
+#if NINFER_COMPUTE_CAPABILITY == 86
+constexpr std::array<RouteSpec, 7> kK17408Routes{{
+    {{1, 3}, Q5LinearAddScheduleId::Split2ExactResidual},
+    {{4, 16}, Q5LinearAddScheduleId::KSplitMmaResidual},
+    {{17, 32}, Q5LinearAddScheduleId::MmaResidualR64C16},
+#else
 constexpr std::array<RouteSpec, 6> kK17408Routes{{
     {{1, 16}, Q5LinearAddScheduleId::Split2ExactResidual},
     {{17, 32}, Q5LinearAddScheduleId::MmaResidualR64C16},
+#endif
     {{33, 48}, Q5LinearAddScheduleId::MmaResidualR64C24},
     {{49, 192}, Q5LinearAddScheduleId::MmaResidualR64C32S3},
     {{193, 512}, Q5LinearAddScheduleId::MmaResidualR64C128},
@@ -128,6 +144,8 @@ const char* q5_linear_add_schedule_name(Q5LinearAddScheduleId schedule) noexcept
         return "linear_add.q5.mma.r64.c128.cta_collective_residual";
     case Q5LinearAddScheduleId::MmaResidualR64C128Tail:
         return "linear_add.q5.mma.r64.c128.cta_collective_residual.narrow_tail";
+    case Q5LinearAddScheduleId::KSplitMmaResidual:
+        return "linear_add.q5.mma.ksplit.residual";
     }
     return "linear_add.q5.unknown";
 }
@@ -192,6 +210,9 @@ void q5_linear_add_execute_plan(const Q5LinearAddPlan& plan, const Tensor& x, co
         return;
     case Q5LinearAddScheduleId::MmaResidualR64C128Tail:
         launch_wide_with_narrow_tail(x, w, residual_out, ws, stream);
+        return;
+    case Q5LinearAddScheduleId::KSplitMmaResidual:
+        q5_linear_add_ksplit_mma_launch(x, w, residual_out, stream);
         return;
     }
     throw std::logic_error("q5 linear_add: unknown schedule");

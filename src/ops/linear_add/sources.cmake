@@ -1,4 +1,5 @@
 # Modified by satellitedown for Cinference: register the FP8 K-split LinearAdd source.
+# Modified by JoaFoschiatti for Cinference sm_86: build the Q5 K-split MMA route.
 # See NOTICE and upstream-provenance.json for upstream attribution.
 
 target_sources(ninfer_ops PRIVATE
@@ -18,6 +19,7 @@ target_sources(ninfer_ops PRIVATE
   "${CMAKE_CURRENT_LIST_DIR}/q4/q4_linear_add.cu"
   "${CMAKE_CURRENT_LIST_DIR}/q5/q5_linear_add_gemm_mma.cu"
   "${CMAKE_CURRENT_LIST_DIR}/q5/q5_linear_add_gemm_simt.cu"
+  "${CMAKE_CURRENT_LIST_DIR}/q5/q5_linear_add_ksplit.cu"
   "${CMAKE_CURRENT_LIST_DIR}/q5/q5_linear_add_plan.cpp"
   "${CMAKE_CURRENT_LIST_DIR}/q8/q8_linear_add_gemm_mma.cu"
   "${CMAKE_CURRENT_LIST_DIR}/q8/q8_linear_add_gemm_simt.cu"
