@@ -1,3 +1,5 @@
+// Modified by JoaFoschiatti for Cinference sm_86: Q5 K-split MMA route at verify widths.
+
 #include "core/weight.h"
 #include "ops/attn_input_proj/q4_q5/q4_q5_attn_input_kernels.h"
 
@@ -7,6 +9,7 @@
 #include "ops/linear/q4/q4_ksplit_strided_store.cuh"
 #include "ops/linear/q4/q4_rowsplit_gemm_simt.cuh"
 #include "ops/linear/q4/q4_rowsplit_gemv.cuh"
+#include "ops/linear/q5/q5_ksplit_mma.cuh"
 #include "ops/linear/q5/q5_rowsplit_gemm_simt.cuh"
 #include "ops/linear/q5/q5_rowsplit_gemv.cuh"
 #include "ops/linear/q5/q5_rowsplit_rowblock_small_t.cuh"
@@ -116,6 +119,21 @@ void launch_q4_ksplit_band(const Tensor& x, const Weight& weight, Tensor& q, Ten
 }
 
 void launch_q4(const Tensor& x, const Weight& weight, Tensor& q, Tensor& key, cudaStream_t stream) {
+#if NINFER_COMPUTE_CAPABILITY == 86
+    if (x.ne[1] >= 2 && x.ne[1] <= 6) {
+        if (weight.padded_shape[1] != kHidden) {
+            throw std::invalid_argument("attention Q4 K-split requires padded K == hidden");
+        }
+        switch (x.ne[1]) {
+        case 2: launch_q4_ksplit_exact<2>(x, weight, q, key, stream); break;
+        case 3: launch_q4_ksplit_exact<3>(x, weight, q, key, stream); break;
+        case 4: launch_q4_ksplit_exact<4>(x, weight, q, key, stream); break;
+        case 5: launch_q4_ksplit_exact<5>(x, weight, q, key, stream); break;
+        default: launch_q4_ksplit_exact<6>(x, weight, q, key, stream); break;
+        }
+        return;
+    }
+#endif
     switch (x.ne[1]) {
     case 1:
         launch_q4_gemv(x, weight, q, key, stream);
@@ -241,12 +259,60 @@ void launch_q5_rowblock(const Tensor& x, const Weight& weight, Tensor& gate, Ten
     CUDA_CHECK(cudaGetLastError());
 }
 
+struct Q5AttnGateValueStore {
+    __nv_bfloat16* gate;
+    __nv_bfloat16* value;
+    std::int32_t gate_ld;
+
+    __device__ __forceinline__ void store(int row, int col, float sum, int live) const {
+        if (col >= live) { return; }
+        if (row < kSplitRow) {
+            gate[static_cast<std::int64_t>(col) * gate_ld + row] = __float2bfloat16(sum);
+        } else {
+            value[static_cast<std::int64_t>(col) * (kParentRows - kSplitRow) + row - kSplitRow] =
+                __float2bfloat16(sum);
+        }
+    }
+
+    __device__ __forceinline__ void operator()(int row, int col, float4 sum, int live) const {
+        store(row, col, sum.x, live);
+        store(row + 8, col, sum.z, live);
+        store(row, col + 1, sum.y, live);
+        store(row + 8, col + 1, sum.w, live);
+    }
+};
+
+template <int TileCols>
+void launch_q5_ksplit(const Tensor& x, const Weight& weight, Tensor& gate, Tensor& value,
+                      cudaStream_t stream) {
+    using Geometry = Q5LinearGeometry<kParentRows, kHidden>;
+    const Q5AttnGateValueStore store{static_cast<__nv_bfloat16*>(gate.data),
+                                     static_cast<__nv_bfloat16*>(value.data), gate.ne[0]};
+    q5_ksplit_mma_kernel<Geometry, TileCols, TileCols, Q5AttnGateValueStore>
+        <<<kParentRows / Q5KSplitMmaSchedule::kRowsPerCta, Q5KSplitMmaSchedule::kThreads, 0,
+           stream>>>(static_cast<const __nv_bfloat16*>(x.data),
+                     static_cast<const std::uint8_t*>(weight.qdata),
+                     static_cast<const std::uint8_t*>(weight.qhigh),
+                     static_cast<const std::uint8_t*>(weight.scales), store, x.ne[1]);
+    CUDA_CHECK(cudaGetLastError());
+}
+
 void launch_q5(const Tensor& x, const Weight& weight, Tensor& gate, Tensor& value,
                cudaStream_t stream) {
     if (x.ne[1] == 1) {
         launch_q5_gemv(x, weight, gate, value, stream);
         return;
     }
+#if NINFER_COMPUTE_CAPABILITY == 86
+    if (x.ne[1] >= 2 && x.ne[1] <= 8) {
+        launch_q5_ksplit<8>(x, weight, gate, value, stream);
+        return;
+    }
+    if (x.ne[1] >= 9 && x.ne[1] <= 12) {
+        launch_q5_ksplit<16>(x, weight, gate, value, stream);
+        return;
+    }
+#endif
     if (x.ne[1] <= 6) {
         launch_q5_split4_exact(x, weight, gate, value, stream);
         return;
