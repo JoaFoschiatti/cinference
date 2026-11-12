@@ -1,3 +1,5 @@
+// Modified by JoaFoschiatti for Cinference sm_86: launch through the Q8 opt-in launchers.
+
 #include "core/weight.h"
 #include "ops/linear_pair/q8/q8_pair_kernels.h"
 #include "ops/linear_pair/q8/q8_pair_plan.h"
@@ -54,12 +56,11 @@ void launch_variant(const Tensor& x, const Weight& first_weight, Tensor& first_o
                             static_cast<__nv_bfloat16*>(second_out.data)};
     const dim3 grid(static_cast<unsigned>(2 * div_up(kRows, Schedule::BM)),
                     static_cast<unsigned>(div_up(x.ne[1], Schedule::BN)), 1u);
-    q8_rowsplit_gemm_mma_kernel<Schedule, Full, Q8Epilogue::Store, PairOutput>
-        <<<grid, Schedule::THREADS, 0, stream>>>(
-            static_cast<const __nv_bfloat16*>(x.data),
-            static_cast<const std::uint8_t*>(first_weight.qdata),
-            static_cast<const std::uint8_t*>(first_weight.scales), output, 2 * kRows, kHidden,
-            x.ne[1], kHidden);
+    launch_q8_rowsplit_gemm_mma<Schedule, Full, Q8Epilogue::Store, PairOutput>(
+        grid, stream, static_cast<const __nv_bfloat16*>(x.data),
+        static_cast<const std::uint8_t*>(first_weight.qdata),
+        static_cast<const std::uint8_t*>(first_weight.scales), output, 2 * kRows, kHidden,
+        x.ne[1], kHidden);
 }
 
 template <class Schedule>

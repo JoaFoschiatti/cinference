@@ -1,4 +1,5 @@
 <!-- Modified by satellitedown for Cinference. Upstream attribution is retained in NOTICE. -->
+<!-- Modified by JoaFoschiatti for Cinference sm_86: document the RTX 3090 build. -->
 
 # Cinference
 
@@ -27,6 +28,10 @@ bash setup.sh
 ```
 
 Requires Linux x86_64, an RTX 5090 (32 GB), and NVIDIA drivers compatible with CUDA 13.4. Choose **1** to install, then **3** to start. The installer builds the pinned Cinference runtime and verifies the model download and accompanying license/provenance files.
+
+### RTX 3090 (`sm_86`)
+
+The `sm86` branch of [JoaFoschiatti/cinference](https://github.com/JoaFoschiatti/cinference) also builds for an RTX 3090 (24 GB): configure with `-DCMAKE_CUDA_ARCHITECTURES=86`. That build serves BF16 and groupwise Q4/Q5/Q6/Q8 artifacts, such as [neroued/Qwen3.8-27B-NInfer](https://huggingface.co/neroued/Qwen3.8-27B-NInfer), with the `bf16` or `int8` KV cache. At startup it rejects NVFP4 and FP8 weights and the `fp8`, `nvfp4` and `k8v4` caches, whose kernels need `sm_120a`, and with them DFlash2 verify trees. Each build accepts only the compute capability it was compiled for. Q8 kernels whose shared tiles exceed the 48 KiB static limit of `sm_86` use dynamic shared memory there; the `sm_120a` code paths are unchanged.
 
 ### Connect
 

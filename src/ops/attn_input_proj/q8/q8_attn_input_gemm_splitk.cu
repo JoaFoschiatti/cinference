@@ -1,3 +1,5 @@
+// Modified by JoaFoschiatti for Cinference sm_86: launch through the Q8 opt-in launchers.
+
 #include "core/weight.h"
 #include "ops/attn_input_proj/q8/q8_attn_input_kernels.h"
 
@@ -37,11 +39,10 @@ void launch_output(const Tensor& x, const Weight& weight, Output output, cudaStr
                                                 : 48;
     using Geometry         = Q8LinearGeometry<Rows, kHidden>;
     using Schedule         = Q8KSplitDefaultSchedule<TileCols, ActiveCols>;
-    q8_ksplit_mma_kernel<Geometry, ActiveCols, Schedule>
-        <<<Rows / kRowsPerCta, Schedule::kThreads, 0, stream>>>(
-            static_cast<const __nv_bfloat16*>(x.data),
-            static_cast<const std::uint8_t*>(weight.qdata),
-            static_cast<const std::uint8_t*>(weight.scales), output);
+    launch_q8_ksplit_mma_kernel<Geometry, ActiveCols, Schedule>(
+        dim3(Rows / kRowsPerCta), stream, static_cast<const __nv_bfloat16*>(x.data),
+        static_cast<const std::uint8_t*>(weight.qdata),
+        static_cast<const std::uint8_t*>(weight.scales), output);
 }
 
 template <int ActiveCols>
@@ -88,11 +89,10 @@ void launch_target_medium_cols(const Tensor& x, const Weight& weight, Tensor& q,
     const TargetOutput output{
         static_cast<__nv_bfloat16*>(q.data), static_cast<__nv_bfloat16*>(k.data),
         static_cast<__nv_bfloat16*>(gate.data), static_cast<__nv_bfloat16*>(v.data)};
-    q8_ksplit_grouped_mma_kernel<kHidden, TileCols, KSplits, NGroups, MinBlocks>
-        <<<kTargetRows / kRowsPerCta, KSplits * NGroups * 32, 0, stream>>>(
-            static_cast<const __nv_bfloat16*>(x.data),
-            static_cast<const std::uint8_t*>(weight.qdata),
-            static_cast<const std::uint8_t*>(weight.scales), output, x.ne[1]);
+    launch_q8_ksplit_grouped_mma_kernel<kHidden, TileCols, KSplits, NGroups, MinBlocks>(
+        dim3(kTargetRows / kRowsPerCta), stream, static_cast<const __nv_bfloat16*>(x.data),
+        static_cast<const std::uint8_t*>(weight.qdata),
+        static_cast<const std::uint8_t*>(weight.scales), output, x.ne[1]);
 }
 
 template <int TileCols, int KSplits, int NGroups, int MinBlocks>
@@ -102,11 +102,10 @@ void launch_companion_medium_cols(const Tensor& x, const Weight& weight, Tensor&
     const CompanionOutput output{static_cast<__nv_bfloat16*>(q.data),
                                  static_cast<__nv_bfloat16*>(k.data),
                                  static_cast<__nv_bfloat16*>(v.data)};
-    q8_ksplit_grouped_mma_kernel<kHidden, TileCols, KSplits, NGroups, MinBlocks>
-        <<<kCompanionRows / kRowsPerCta, KSplits * NGroups * 32, 0, stream>>>(
-            static_cast<const __nv_bfloat16*>(x.data),
-            static_cast<const std::uint8_t*>(weight.qdata),
-            static_cast<const std::uint8_t*>(weight.scales), output, x.ne[1]);
+    launch_q8_ksplit_grouped_mma_kernel<kHidden, TileCols, KSplits, NGroups, MinBlocks>(
+        dim3(kCompanionRows / kRowsPerCta), stream, static_cast<const __nv_bfloat16*>(x.data),
+        static_cast<const std::uint8_t*>(weight.qdata),
+        static_cast<const std::uint8_t*>(weight.scales), output, x.ne[1]);
 }
 
 } // namespace

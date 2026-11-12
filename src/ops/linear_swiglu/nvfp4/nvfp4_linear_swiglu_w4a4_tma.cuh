@@ -1,3 +1,5 @@
+// Modified by JoaFoschiatti for Cinference sm_86: build the kernel body only for sm_120a.
+
 #pragma once
 
 #include "ops/common/math.cuh"
@@ -58,6 +60,7 @@ __global__ __launch_bounds__(
     static_assert(Schedule::kWarpsN == 2);
     static_assert(Schedule::kMmaN == 8);
 
+#if defined(__CUDA_ARCH__) && __CUDA_ARCH__ >= 1200
     constexpr int kIntermediate = Geometry::kOutputRows / 2;
     constexpr int kPairN        = Schedule::kBlockN / 2;
     static_assert((kIntermediate % kPairN) == 0);
@@ -278,6 +281,9 @@ __global__ __launch_bounds__(
                       row_vector * 8,
                   values);
     }
+#else
+    __trap();
+#endif
 }
 
 } // namespace ninfer::ops::detail

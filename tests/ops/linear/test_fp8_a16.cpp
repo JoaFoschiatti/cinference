@@ -1,3 +1,5 @@
+// Modified by JoaFoschiatti for Cinference sm_86: skip FP8, NVFP4 and K8V4 routes on sm_86.
+
 #include "core/weight.h"
 #include "ops/linear/linear_test_common.h"
 #include "ops/linear/fp8/fp8_format.h"
@@ -127,6 +129,10 @@ int main() {
         std::cout << "SKIP: no usable CUDA device\n";
         return 77;
     }
+#if NINFER_COMPUTE_CAPABILITY == 86
+    std::cout << "SKIP: FP8 routes are not built for sm_86\n";
+    return 77;
+#endif
     try {
         const int failures = run_fp8_a16();
         std::cout << (failures == 0 ? "OK" : "FAIL") << " FP8 A16 Linear\n";

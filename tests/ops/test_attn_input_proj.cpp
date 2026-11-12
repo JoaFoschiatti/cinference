@@ -1,3 +1,5 @@
+// Modified by JoaFoschiatti for Cinference sm_86: skip FP8, NVFP4 and K8V4 routes on sm_86.
+
 #include "core/weight.h"
 #include "ninfer/ops/attn_input_proj.h"
 #include "ninfer/ops/weight_input.h"
@@ -621,8 +623,10 @@ int main(int argc, char** argv) {
     if (!dflash2_only) {
         failures += run_q4_q5();
         failures += run_bf16_target();
+#if NINFER_COMPUTE_CAPABILITY != 86
         failures += run_nvfp4_target();
         failures += run_fp8_target();
+#endif
         failures += run_q8_target();
         failures += run_q8_companion();
     }

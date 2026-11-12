@@ -1,4 +1,5 @@
 // Modified by satellitedown for Cinference: cover wide K8V4 verify blocks and verify trees.
+// Modified by JoaFoschiatti for Cinference sm_86: skip FP8, NVFP4 and K8V4 routes on sm_86.
 // See NOTICE and upstream-provenance.json for upstream attribution.
 
 #include "core/arena.h"
@@ -2338,6 +2339,9 @@ int run_dflash2_cases() {
     for (auto storage :
          {KvCacheStorage::BFloat16, KvCacheStorage::Int8Group64, KvCacheStorage::Fp8E4M3Row256,
           KvCacheStorage::Nvfp4Group16, KvCacheStorage::Fp8KeyNvfp4Value}) {
+#if NINFER_COMPUTE_CAPABILITY == 86
+        if (storage != KvCacheStorage::BFloat16 && storage != KvCacheStorage::Int8Group64) continue;
+#endif
         const auto run = [&](int width, int batch, int base, bool graph) {
             BatchAttentionCase c{width,
                                  {},
@@ -2382,6 +2386,9 @@ int run_batch_cases() {
     for (auto storage :
          {KvCacheStorage::BFloat16, KvCacheStorage::Int8Group64, KvCacheStorage::Fp8E4M3Row256,
           KvCacheStorage::Nvfp4Group16, KvCacheStorage::Fp8KeyNvfp4Value}) {
+#if NINFER_COMPUTE_CAPABILITY == 86
+        if (storage != KvCacheStorage::BFloat16 && storage != KvCacheStorage::Int8Group64) continue;
+#endif
         failures += run_batch_case(kGeometries[0], storage,
                                    {16, {0}, {0}, {0}, MappingPattern::Fragmented, 1501u});
         failures += run_batch_case(kGeometries[0], storage,
@@ -2405,9 +2412,11 @@ int run_batch_cases() {
                        {6, {61, 127, 511}, {6, 3, 0}, {2, 0, 1}, MappingPattern::Fragmented, 503u});
     failures += run_batch_case(kGeometries[1], KvCacheStorage::BFloat16,
                                {16, {49, 2041}, {16, 7}, {1, 0}, MappingPattern::Identity, 504u});
+#if NINFER_COMPUTE_CAPABILITY != 86
     failures +=
         run_batch_case(kGeometries[0], KvCacheStorage::Fp8E4M3Row256,
                        {6, {61, 127, 511}, {6, 3, 0}, {2, 0, 1}, MappingPattern::Fragmented, 505u});
+#endif
     return failures;
 }
 
@@ -2618,6 +2627,10 @@ int run_softmax_attention_nvfp4_tests() {
         std::cout << "SKIP: no usable CUDA device\n";
         return 77;
     }
+#if NINFER_COMPUTE_CAPABILITY == 86
+    std::cout << "SKIP: the NVFP4 cache is not built for sm_86\n";
+    return 77;
+#endif
     int failures = run_nvfp4_cases();
     failures += run_quantized_batch_cases(KvCacheStorage::Nvfp4Group16, 720u);
     failures += report_quantization_quality(KvCacheStorage::Nvfp4Group16, 724u);
@@ -2631,6 +2644,10 @@ int run_softmax_attention_k8v4_tests() {
         std::cout << "SKIP: no usable CUDA device\n";
         return 77;
     }
+#if NINFER_COMPUTE_CAPABILITY == 86
+    std::cout << "SKIP: the K8V4 cache is not built for sm_86\n";
+    return 77;
+#endif
     int failures = run_k8v4_cases();
     failures += run_quantized_batch_cases(KvCacheStorage::Fp8KeyNvfp4Value, 815u);
     failures += report_quantization_quality(KvCacheStorage::Fp8KeyNvfp4Value, 819u);
@@ -2647,17 +2664,23 @@ int run_softmax_attention_causal_cache_tests() {
     }
 
     int failures = verify_workspace_capacity_contract();
+#if NINFER_COMPUTE_CAPABILITY != 86
     failures += run_nvfp4_cases();
     failures += run_quantized_batch_cases(KvCacheStorage::Nvfp4Group16, 720u);
     failures += report_quantization_quality(KvCacheStorage::Nvfp4Group16, 724u);
     failures += run_k8v4_cases();
     failures += run_quantized_batch_cases(KvCacheStorage::Fp8KeyNvfp4Value, 815u);
     failures += report_quantization_quality(KvCacheStorage::Fp8KeyNvfp4Value, 819u);
+#endif
     for (const Geometry& geometry : kGeometries) { failures += run_geometry(geometry); }
+#if NINFER_COMPUTE_CAPABILITY != 86
     failures += run_fp8_cases();
+#endif
     failures += run_batch_cases();
     failures += run_dflash2_cases();
+#if NINFER_COMPUTE_CAPABILITY != 86
     failures += run_tree_batch_cases();
+#endif
     std::cout << (failures == 0 ? "PASS" : "FAIL")
               << " causal_softmax_attention public-contract correctness\n";
     return failures == 0 ? 0 : 1;

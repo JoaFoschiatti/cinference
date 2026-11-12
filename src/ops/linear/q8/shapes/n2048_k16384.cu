@@ -1,3 +1,5 @@
+// Modified by JoaFoschiatti for Cinference sm_86: launch through the Q8 opt-in launchers.
+
 #include "ops/linear/q8/q8_shapes.h"
 #include "ops/linear/q8/q8_ksplit_launch.cuh"
 #include "ops/linear/q8/q8_ksplit_grouped_mma.cuh"
@@ -24,11 +26,10 @@ void launch_grouped(const Tensor& x, const Weight& weight, Tensor& out, cudaStre
             "q8 grouped K-split: padded K differs from registered geometry");
     }
     const Q8ContiguousOutput output{static_cast<__nv_bfloat16*>(out.data), Geometry::kOutputRows};
-    q8_ksplit_grouped_mma_kernel<Geometry::kInputRows, Capacity, KWarps, TokenGroups, 1>
-        <<<Geometry::kOutputRows / 16, KWarps * TokenGroups * 32, 0, stream>>>(
-            static_cast<const __nv_bfloat16*>(x.data),
-            static_cast<const std::uint8_t*>(weight.qdata),
-            static_cast<const std::uint8_t*>(weight.scales), output, x.ne[1]);
+    launch_q8_ksplit_grouped_mma_kernel<Geometry::kInputRows, Capacity, KWarps, TokenGroups, 1>(
+        dim3(Geometry::kOutputRows / 16), stream, static_cast<const __nv_bfloat16*>(x.data),
+        static_cast<const std::uint8_t*>(weight.qdata),
+        static_cast<const std::uint8_t*>(weight.scales), output, x.ne[1]);
     CUDA_CHECK(cudaGetLastError());
 }
 } // namespace

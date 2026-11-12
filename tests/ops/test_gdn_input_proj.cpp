@@ -1,3 +1,5 @@
+// Modified by JoaFoschiatti for Cinference sm_86: skip FP8, NVFP4 and K8V4 routes on sm_86.
+
 #include "core/weight.h"
 #include "core/device.h"
 #include "ninfer/ops/gdn_input_proj.h"
@@ -421,8 +423,10 @@ int main() {
     int failures = 0;
     failures += run_q4_q5();
     failures += run_q8();
+#if NINFER_COMPUTE_CAPABILITY != 86
     failures += run_nvfp4();
     failures += run_fp8();
+#endif
     std::cout << (failures == 0 ? "OK" : "FAIL") << " gdn_input_proj\n";
     return failures == 0 ? 0 : 1;
 }

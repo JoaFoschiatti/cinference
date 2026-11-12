@@ -1,18 +1,26 @@
+# Modified by JoaFoschiatti for Cinference sm_86: accept and identify the sm_86 build.
+
 cmake_minimum_required(VERSION 3.28)
 
-# The current implementation is compiled only for sm_120a. Set and validate the
-# architecture before CUDA compiler detection so CMake never injects a generic
-# host-toolchain default or accepts an unsupported target.
+# The implementation is compiled for exactly one of sm_120a or sm_86. Set and
+# validate the architecture before CUDA compiler detection so CMake never injects
+# a generic host-toolchain default or accepts an unsupported target.
 if(NOT DEFINED CMAKE_CUDA_ARCHITECTURES)
   set(CMAKE_CUDA_ARCHITECTURES 120a CACHE STRING "CUDA architectures to build")
 endif()
-if(NOT CMAKE_CUDA_ARCHITECTURES STREQUAL "120a")
+if(NOT CMAKE_CUDA_ARCHITECTURES STREQUAL "120a" AND NOT CMAKE_CUDA_ARCHITECTURES STREQUAL "86")
   message(FATAL_ERROR
-    "NInfer supports only CMAKE_CUDA_ARCHITECTURES=120a; got "
+    "NInfer supports only CMAKE_CUDA_ARCHITECTURES=120a or 86; got "
     "'${CMAKE_CUDA_ARCHITECTURES}'")
 endif()
 
 project(ninfer LANGUAGES C CXX CUDA)
+
+if(CMAKE_CUDA_ARCHITECTURES STREQUAL "86")
+  add_compile_definitions(NINFER_COMPUTE_CAPABILITY=86)
+else()
+  add_compile_definitions(NINFER_COMPUTE_CAPABILITY=120)
+endif()
 
 # --- Global settings ---------------------------------------------------------
 option(NINFER_BUILD_APPS "Build the NInfer CLI, server and perplexity evaluator" ON)

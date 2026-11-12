@@ -1,4 +1,5 @@
 // Modified by satellitedown for Cinference: evict-first weight fills; tile-finishing outputs.
+// Modified by JoaFoschiatti for Cinference sm_86: build the kernel body only for sm_120a.
 // See NOTICE and upstream-provenance.json for upstream attribution.
 
 #pragma once
@@ -225,6 +226,7 @@ __launch_bounds__(Schedule::kThreads, Schedule::kMinBlocksPerSm) void nvfp4_w4a4
     static_assert(!PairRows || (Schedule::kBlockN % 2) == 0);
     static_assert(!PairRows || ((Geometry::kOutputRows / 2) % (Schedule::kBlockN / 2)) == 0);
 
+#if defined(__CUDA_ARCH__) && __CUDA_ARCH__ >= 1200
     __shared__ Nvfp4W4a4SharedStorage<Schedule> shared;
     const int token_begin       = static_cast<int>(blockIdx.y) * Schedule::kBlockM;
     constexpr int kRowsPerBlock = PairRows ? Schedule::kBlockN / 2 : Schedule::kBlockN;
@@ -398,6 +400,9 @@ __launch_bounds__(Schedule::kThreads, Schedule::kMinBlocksPerSm) void nvfp4_w4a4
             }
         }
     }
+#else
+    __trap();
+#endif
 }
 
 // The TMA route reads a whole [kNvfp4TmaBlockM tokens, kNvfp4ScaleTileGroups groups] tile of

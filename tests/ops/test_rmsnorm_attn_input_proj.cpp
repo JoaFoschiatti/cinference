@@ -1,3 +1,5 @@
+// Modified by JoaFoschiatti for Cinference sm_86: skip FP8, NVFP4 and K8V4 routes on sm_86.
+
 #include "core/weight.h"
 #include "ninfer/ops/attn_input_proj.h"
 #include "ninfer/ops/rmsnorm.h"
@@ -146,6 +148,10 @@ int main() {
         std::cout << "SKIP: no usable CUDA device\n";
         return 77;
     }
+#if NINFER_COMPUTE_CAPABILITY == 86
+    std::cout << "SKIP: FP8 routes are not built for sm_86\n";
+    return 77;
+#endif
     using ops::LinearPolicy;
     const auto parent = quantized_weight::make_patterned_weight(
         QType::FP8_E4M3FN_ROW_BF16, 2 * kQueryRows + 2 * kKeyRows, kHidden, 931U);

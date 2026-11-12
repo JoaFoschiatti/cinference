@@ -1,5 +1,6 @@
 // Modified by satellitedown for Cinference: MTP-10, diagnostics, fused FFN/input norm, trees;
 // the overlapped GDN record activation.
+// Modified by JoaFoschiatti for Cinference sm_86: validate sm_86 devices, weights and KV caches.
 // See NOTICE and upstream-provenance.json for upstream attribution.
 
 #include "models/qwen3_5/execution/attention.h"
@@ -11,6 +12,7 @@
 #include "models/qwen3_5/program/planning/startup.h"
 #include "models/qwen3_5/execution/vision.h"
 #include "models/qwen3_5/execution/workspace.h"
+#include "artifact/formats.h"
 #include "core/device.h"
 #include "ninfer/ops/gated_delta_net.h"
 #include "ninfer/ops/candidate_selector.h"
@@ -834,9 +836,31 @@ void validate_target_options(const execution::Parameters& parameters, DeviceCont
                 "verify trees require DFlash2 with K=15, the k8v4 KV cache and 24x256 attention");
         }
     }
+#if NINFER_COMPUTE_CAPABILITY == 86
+    if (device.compute_capability() != 86) {
+        throw std::invalid_argument(
+            "the sm_86 build of the Qwen3.5 family runtime requires compute capability 8.6");
+    }
+    if (options.kv_cache != KvCacheStorage::BFloat16 &&
+        options.kv_cache != KvCacheStorage::Int8Group64) {
+        throw std::invalid_argument(
+            "compute capability 8.6 supports only the bf16 and int8 KV caches");
+    }
+    for (const auto& weight : parameters.model.weight_data()) {
+        for (const auto& part : weight.view.parts) {
+            const QType format = part.parent->geometry.format;
+            if (format == QType::NVFP4 || format == QType::FP8_E4M3FN_ROW_BF16) {
+                throw std::invalid_argument("compute capability 8.6 does not support " +
+                                            std::string(artifact::format_name(format)) +
+                                            " weights; " + weight.name + " uses it");
+            }
+        }
+    }
+#else
     if (device.compute_capability() != 120) {
         throw std::invalid_argument("Qwen3.5 family runtime requires compute capability 12.0");
     }
+#endif
 }
 
 std::unique_ptr<SequencePlanImpl> build_sequence_candidate(const SequencePlanningInputs& inputs,

@@ -1,4 +1,5 @@
 // Modified by satellitedown for Cinference: share the group quantization steps with a lane form.
+// Modified by JoaFoschiatti for Cinference sm_86: trap the E2M1 conversions outside sm_120a.
 // See NOTICE and upstream-provenance.json for upstream attribution.
 
 #pragma once
@@ -36,6 +37,7 @@ static_assert(alignof(Nvfp4QuantizedK16) == 8);
 
 __device__ __forceinline__ void
 pack_nvfp4_e2m1x16(const float2 (&values)[8], std::uint32_t& codes_lo, std::uint32_t& codes_hi) {
+#if defined(__CUDA_ARCH__) && __CUDA_ARCH__ >= 1200
     asm volatile("{\n"
                  ".reg .b8 b0;\n"
                  ".reg .b8 b1;\n"
@@ -61,6 +63,9 @@ pack_nvfp4_e2m1x16(const float2 (&values)[8], std::uint32_t& codes_lo, std::uint
                    "f"(values[2].x), "f"(values[2].y), "f"(values[3].x), "f"(values[3].y),
                    "f"(values[4].x), "f"(values[4].y), "f"(values[5].x), "f"(values[5].y),
                    "f"(values[6].x), "f"(values[6].y), "f"(values[7].x), "f"(values[7].y));
+#else
+    __trap();
+#endif
 }
 
 // A 16-element group's E4M3 scale: its largest magnitude times the input divisor, over 6 (the
@@ -79,6 +84,7 @@ __device__ __forceinline__ float nvfp4_code_input(float value, float input_scale
 
 // One code byte in the low bits: the low nibble encodes lo, the high nibble hi.
 __device__ __forceinline__ std::uint32_t pack_nvfp4_e2m1x2(float lo, float hi) {
+#if defined(__CUDA_ARCH__) && __CUDA_ARCH__ >= 1200
     std::uint32_t result;
     asm("{\n"
         ".reg .b8 b0;\n"
@@ -90,6 +96,10 @@ __device__ __forceinline__ std::uint32_t pack_nvfp4_e2m1x2(float lo, float hi) {
         : "=r"(result)
         : "f"(lo), "f"(hi));
     return result & 0xffU;
+#else
+    __trap();
+    return 0U;
+#endif
 }
 
 __device__ __forceinline__ Nvfp4QuantizedK16 quantize_nvfp4_k16(const __nv_bfloat16* source,

@@ -1,3 +1,5 @@
+// Modified by JoaFoschiatti for Cinference sm_86: use dynamic shared memory above the static limit.
+
 #pragma once
 
 // Q8G32 RowSplit medium-T split-K MMA core. K-split warps share one 16-row
@@ -13,13 +15,29 @@
 
 namespace ninfer::ops::detail {
 
+template <int TileCols, int KSplits, int NGroups>
+struct Q8KSplitGroupedSharedStorage {
+    static constexpr int kTileK   = 64;
+    static constexpr int kMmaRows = 16;
+    alignas(16) std::uint8_t codes[kMmaRows][KSplits * kTileK];
+    alignas(16) __nv_bfloat16 activations[KSplits * NGroups][(TileCols / NGroups) * kTileK];
+};
+
+template <int TileCols, int KSplits, int NGroups>
+inline constexpr int kQ8KSplitGroupedDynamicSharedBytes =
+    static_cast<int>(sizeof(Q8KSplitGroupedSharedStorage<TileCols, KSplits, NGroups>)) >
+            kMaxStaticSharedBytes
+        ? static_cast<int>(sizeof(Q8KSplitGroupedSharedStorage<TileCols, KSplits, NGroups>))
+        : 0;
+
 template <int Hidden, int TileCols, int KSplits, int NGroups, int MinBlocks, class Output,
           bool AddResidual = false, bool TiledColumns = false>
 __global__ __launch_bounds__(KSplits* NGroups * 32, MinBlocks) void q8_ksplit_grouped_mma_kernel(
     const __nv_bfloat16* __restrict__ x, const std::uint8_t* __restrict__ codes,
     const std::uint8_t* __restrict__ scales, Output output, int active_cols) {
-    constexpr int kTileK       = 64;
-    constexpr int kMmaRows     = 16;
+    using SharedStorage        = Q8KSplitGroupedSharedStorage<TileCols, KSplits, NGroups>;
+    constexpr int kTileK       = SharedStorage::kTileK;
+    constexpr int kMmaRows     = SharedStorage::kMmaRows;
     constexpr int kRowsPerCta  = 16;
     constexpr int kKernelWarps = KSplits * NGroups;
     constexpr int kGroupK      = KSplits * kTileK;
@@ -31,8 +49,14 @@ __global__ __launch_bounds__(KSplits* NGroups * 32, MinBlocks) void q8_ksplit_gr
     static_assert(TileCols % NGroups == 0 && kWarpCols % 8 == 0);
     static_assert(Hidden % kGroupK == 0 && kKernelWarps <= 32);
 
-    __shared__ __align__(16) std::uint8_t code_shared[kMmaRows][kGroupK];
-    __shared__ __align__(16) __nv_bfloat16 b_shared[kKernelWarps][kWarpCols * kTileK];
+    constexpr bool kDynamicShared =
+        kQ8KSplitGroupedDynamicSharedBytes<TileCols, KSplits, NGroups> != 0;
+    __shared__ __align__(16) unsigned char static_shared[kDynamicShared ? 1 : sizeof(SharedStorage)];
+    extern __shared__ __align__(16) unsigned char dynamic_shared[];
+    auto& shared =
+        *reinterpret_cast<SharedStorage*>(kDynamicShared ? dynamic_shared : static_shared);
+    auto& code_shared = shared.codes;
+    auto& b_shared    = shared.activations;
 
     const int tid        = static_cast<int>(threadIdx.x);
     const int warp       = tid >> 5;
@@ -237,6 +261,26 @@ __global__ __launch_bounds__(KSplits* NGroups * 32, MinBlocks) void q8_ksplit_gr
             }
         }
     }
+}
+
+template <int Hidden, int TileCols, int KSplits, int NGroups, int MinBlocks, class Output,
+          bool AddResidual = false, bool TiledColumns = false>
+void launch_q8_ksplit_grouped_mma_kernel(dim3 grid, cudaStream_t stream, const __nv_bfloat16* x,
+                                         const std::uint8_t* codes, const std::uint8_t* scales,
+                                         Output output, int active_cols) {
+    constexpr int kSharedBytes = kQ8KSplitGroupedDynamicSharedBytes<TileCols, KSplits, NGroups>;
+    if constexpr (kSharedBytes > 0) {
+        static const cudaError_t attribute =
+            cudaFuncSetAttribute(q8_ksplit_grouped_mma_kernel<Hidden, TileCols, KSplits, NGroups,
+                                                              MinBlocks, Output, AddResidual,
+                                                              TiledColumns>,
+                                 cudaFuncAttributeMaxDynamicSharedMemorySize, kSharedBytes);
+        CUDA_CHECK(attribute);
+    }
+    q8_ksplit_grouped_mma_kernel<Hidden, TileCols, KSplits, NGroups, MinBlocks, Output, AddResidual,
+                                 TiledColumns>
+        <<<grid, KSplits * NGroups * 32, kSharedBytes, stream>>>(x, codes, scales, output,
+                                                                 active_cols);
 }
 
 } // namespace ninfer::ops::detail

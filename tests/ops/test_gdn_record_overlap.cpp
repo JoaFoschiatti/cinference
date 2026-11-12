@@ -1,3 +1,5 @@
+// Modified by JoaFoschiatti for Cinference sm_86: skip FP8, NVFP4 and K8V4 routes on sm_86.
+
 // Exactness of the overlapped GDN record route. gdn_norm_gating_fp8_hidden must equal the A8
 // quantization of gdn_norm_gating_proj's hidden output and gdn_norm_gating_control its g and beta,
 // for every T of the fused route; the two activation-form halves of the FP8 record projection, run
@@ -315,6 +317,10 @@ int main() {
         std::cout << "SKIP: no usable CUDA device\n";
         return 77;
     }
+#if NINFER_COMPUTE_CAPABILITY == 86
+    std::cout << "SKIP: FP8 routes are not built for sm_86\n";
+    return 77;
+#endif
     int failures = 0;
     for (std::int32_t tokens : {1, 2, 3, 14, 15, 16, 28, 29, 42}) {
         failures += run_norm_gating_case(tokens, 2100U + static_cast<std::uint32_t>(tokens));

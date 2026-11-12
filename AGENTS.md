@@ -1,6 +1,7 @@
 # AGENTS.md
 
 Modified by satellitedown for Cinference: replace machine-specific interpreter instructions.
+<!-- Modified by JoaFoschiatti for Cinference sm_86: list the sm_86 build target. -->
 
 These rules apply to the whole repository.
 
@@ -32,7 +33,9 @@ approval requirements beyond the user's instructions and the actual execution en
 NInfer is a from-scratch C++/CUDA inference engine for maximum single-GPU performance. It implements
 `Qwen3_5ForCausalLM` and `Qwen3_5MoeForCausalLM`; official Qwen3.6/3.8 artifacts and user recipes
 use the same architecture, binding and execution path. The implementation targets `sm_120a` and
-is tuned on NVIDIA GeForce RTX 5090.
+is tuned on NVIDIA GeForce RTX 5090. A separate `sm_86` build serves NVIDIA GeForce RTX 3090 with
+BF16 and groupwise-integer weights and the BF16 or INT8 KV cache; each build accepts only the
+compute capability it was compiled for.
 
 Generation uses one GPU, one resident model, startup-fixed concurrency of one to eight requests,
 bounded FIFO ingress, no active-request preemption, and one compact decode batch per round.

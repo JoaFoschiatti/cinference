@@ -1,3 +1,5 @@
+// Modified by JoaFoschiatti for Cinference sm_86: build the kernel body only for sm_120a.
+
 #pragma once
 
 #include "ops/common/mbarrier.cuh"
@@ -191,6 +193,7 @@ __launch_bounds__(Schedule::kThreads, Schedule::kMinBlocksPerSm) void nvfp4_w4a4
     static_assert((Geometry::kOutputRows % Schedule::kBlockN) == 0);
     static_assert(Schedule::kStages >= 2, "the activation-scale buffer needs two slots");
 
+#if defined(__CUDA_ARCH__) && __CUDA_ARCH__ >= 1200
     extern __shared__ __align__(128) unsigned char shared_bytes[];
     auto& shared = *reinterpret_cast<Nvfp4W4a4TmaSharedStorage<Schedule>*>(shared_bytes);
     int block_x  = 0;
@@ -396,6 +399,9 @@ __launch_bounds__(Schedule::kThreads, Schedule::kMinBlocksPerSm) void nvfp4_w4a4
             load_vec<uint4>(shared_output + token_local * kOutputStride + row_vector * 8);
         output.store_vector(row_begin + row_vector * 8, token, values);
     }
+#else
+    __trap();
+#endif
 }
 
 } // namespace ninfer::ops::detail

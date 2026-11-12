@@ -1,3 +1,5 @@
+// Modified by JoaFoschiatti for Cinference sm_86: launch through the Q8 opt-in launchers.
+
 #include "core/weight.h"
 #include "ops/linear_add/q8/q8_linear_add_kernels.h"
 
@@ -41,12 +43,11 @@ void launch_active_cols(const Tensor& x, const Weight& weight, Tensor& residual_
     static_assert((kRows % kRowsPerCta) == 0);
     auto* residual = static_cast<__nv_bfloat16*>(residual_out.data);
     const Q8ContiguousOutput output{residual, kRows};
-    q8_ksplit_mma_kernel<Geometry, ActiveCols, Schedule, Q8ContiguousOutput,
-                         Q8KSplitResidualEpilogue>
-        <<<kRows / kRowsPerCta, Schedule::kThreads, 0, stream>>>(
-            static_cast<const __nv_bfloat16*>(x.data),
-            static_cast<const std::uint8_t*>(weight.qdata),
-            static_cast<const std::uint8_t*>(weight.scales), output, Q8KSplitResidualEpilogue{});
+    launch_q8_ksplit_mma_kernel<Geometry, ActiveCols, Schedule, Q8ContiguousOutput,
+                                Q8KSplitResidualEpilogue>(
+        dim3(kRows / kRowsPerCta), stream, static_cast<const __nv_bfloat16*>(x.data),
+        static_cast<const std::uint8_t*>(weight.qdata),
+        static_cast<const std::uint8_t*>(weight.scales), output, Q8KSplitResidualEpilogue{});
 }
 
 template <int Hidden, std::size_t... Offsets>
@@ -64,9 +65,10 @@ template <int Hidden, int TileCols, int KSplits, int NGroups, int MinBlocks>
 void launch_medium(const Tensor& x, Tensor& residual_out, const Weight& weight,
                    cudaStream_t stream) {
     const Q8ContiguousOutput output{static_cast<__nv_bfloat16*>(residual_out.data), kRows};
-    q8_ksplit_grouped_mma_kernel<Hidden, TileCols, KSplits, NGroups, MinBlocks, Q8ContiguousOutput,
-                                 true><<<kRows / kRowsPerCta, KSplits * NGroups * 32, 0, stream>>>(
-        static_cast<const __nv_bfloat16*>(x.data), static_cast<const std::uint8_t*>(weight.qdata),
+    launch_q8_ksplit_grouped_mma_kernel<Hidden, TileCols, KSplits, NGroups, MinBlocks,
+                                        Q8ContiguousOutput, true>(
+        dim3(kRows / kRowsPerCta), stream, static_cast<const __nv_bfloat16*>(x.data),
+        static_cast<const std::uint8_t*>(weight.qdata),
         static_cast<const std::uint8_t*>(weight.scales), output, x.ne[1]);
 }
 

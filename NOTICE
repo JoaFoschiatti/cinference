@@ -58,6 +58,17 @@ machine-local agent automation and unrelated sponsorship configuration.
 Modified retained files carry modification notices. upstream-provenance.json
 identifies the original changed-file set and subsequent publication edits.
 
+Modifications by JoaFoschiatti for Cinference sm_86 add a GeForce RTX 3090
+(Ampere sm_86) build. The sm_120a-only FP8 and NVFP4 MMA forms, E2M1
+conversions, transaction mbarriers, TMA and register-reallocation kernels trap
+on other architectures, and the PDL device controls become no-ops below sm_90.
+Q8 kernels whose shared tiles exceed the 48 KiB static limit of sm_86 use
+dynamic shared memory with an explicit opt-in there. Cooperative GDN gating
+launches take their residency from each kernel's occupancy. Startup requires
+the compute capability the binary was built for and, on sm_86, rejects NVFP4
+and FP8 weights and the fp8, nvfp4 and k8v4 KV caches. The sm_86 build skips
+those routes in its tests. Files modified for sm_86 carry modification notices.
+
 The native NInfer binary names, API symbols, and .ninfer format are retained.
 Use of the NInfer name identifies the original project and its interfaces;
 this fork does not imply endorsement by Neroued or other upstream authors.

@@ -1,3 +1,5 @@
+// Modified by JoaFoschiatti for Cinference sm_86: use dynamic shared memory above the static limit.
+
 #pragma once
 
 // Q8G32 RowSplit K-split MMA contraction.
@@ -8,6 +10,7 @@
 // the CTA reduces FP32 partials in shared memory. Output owns physical row/token addressing; an
 // optional caller epilogue may instead consume the FP32 tile.
 
+#include "core/device.h"
 #include "ops/common/mma.cuh"
 #include "ops/common/memory.cuh"
 #include "ops/linear/q8/q8_ksplit_config.h"
@@ -53,7 +56,7 @@ __device__ __forceinline__ unsigned q8_ksplit_bf16_pair_from_s8(unsigned values)
     return result.bits;
 }
 
-// The contraction owns the shared layout; tiled launchers use the same type for opt-in capacity.
+// The contraction owns the shared layout; launchers use the same type for opt-in capacity.
 template <class Schedule>
 union alignas(16) Q8KSplitSharedStorage {
     struct {
@@ -68,6 +71,13 @@ union alignas(16) Q8KSplitSharedStorage {
 
     float partial[Schedule::kKWarps * (Schedule::kTileTokens / 8) * 32 * 4];
 };
+
+template <class Schedule, int ActiveCols, bool TiledColumns>
+inline constexpr int kQ8KSplitDynamicSharedBytes =
+    (TiledColumns && ActiveCols > 64) ||
+            static_cast<int>(sizeof(Q8KSplitSharedStorage<Schedule>)) > kMaxStaticSharedBytes
+        ? static_cast<int>(sizeof(Q8KSplitSharedStorage<Schedule>))
+        : 0;
 
 struct Q8KSplitIdentityColumns {
     __device__ __forceinline__ int operator()(int column) const { return column; }
@@ -104,7 +114,8 @@ q8_ksplit_mma(const __nv_bfloat16* __restrict__ x, const std::uint8_t* __restric
 
     using SharedStorage = Q8KSplitSharedStorage<Schedule>;
 
-    constexpr bool kDynamicShared = TiledColumns && ActiveCols > 64;
+    constexpr bool kDynamicShared =
+        kQ8KSplitDynamicSharedBytes<Schedule, ActiveCols, TiledColumns> != 0;
     __shared__ __align__(
         16) unsigned char static_shared[kDynamicShared ? 1 : sizeof(SharedStorage)];
     extern __shared__ __align__(16) unsigned char dynamic_shared[];
@@ -389,6 +400,27 @@ __launch_bounds__(Schedule::kThreads, Schedule::kMinBlocksPerSm) void q8_ksplit_
     Epilogue epilogue = {}, RowPolicy row_policy = {}, std::int32_t columns = ActiveCols) {
     q8_ksplit_mma<Geometry, ActiveCols, Schedule, Output, Epilogue, RowPolicy, DirectPairEpilogue,
                   TiledColumns>(x, codes, scales, output, epilogue, row_policy, columns);
+}
+
+template <class Geometry, int ActiveCols, class Schedule, class Output,
+          class Epilogue = Q8KSplitStoreEpilogue, class RowPolicy = Q8KSplitIdentityRows,
+          bool DirectPairEpilogue = false, bool TiledColumns = false>
+void launch_q8_ksplit_mma_kernel(dim3 grid, cudaStream_t stream, const __nv_bfloat16* x,
+                                 const std::uint8_t* codes, const std::uint8_t* scales,
+                                 Output output, Epilogue epilogue = {}, RowPolicy row_policy = {},
+                                 std::int32_t columns = ActiveCols) {
+    constexpr int kSharedBytes = kQ8KSplitDynamicSharedBytes<Schedule, ActiveCols, TiledColumns>;
+    if constexpr (kSharedBytes > 0) {
+        static const cudaError_t attribute = cudaFuncSetAttribute(
+            q8_ksplit_mma_kernel<Geometry, ActiveCols, Schedule, Output, Epilogue, RowPolicy,
+                                 DirectPairEpilogue, TiledColumns>,
+            cudaFuncAttributeMaxDynamicSharedMemorySize, kSharedBytes);
+        CUDA_CHECK(attribute);
+    }
+    q8_ksplit_mma_kernel<Geometry, ActiveCols, Schedule, Output, Epilogue, RowPolicy,
+                         DirectPairEpilogue, TiledColumns>
+        <<<grid, Schedule::kThreads, kSharedBytes, stream>>>(x, codes, scales, output, epilogue,
+                                                             row_policy, columns);
 }
 
 } // namespace ninfer::ops::detail

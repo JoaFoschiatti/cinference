@@ -1,3 +1,5 @@
+// Modified by JoaFoschiatti for Cinference sm_86: build the kernel body only for sm_120a.
+
 #pragma once
 
 // Group-16 NVFP4 causal prompt kernel with an entirely on-chip decode pipeline. Twelve producer
@@ -92,6 +94,7 @@ __launch_bounds__(kCausalPromptNvfp4Threads, 1) void causal_attention_prompt_nvf
     const std::uint8_t* __restrict__ cache_v_scale, Metadata metadata,
     const std::int32_t* __restrict__ positions, float scale, __nv_bfloat16* __restrict__ out,
     std::int32_t width) {
+#if defined(__CUDA_ARCH__) && __CUDA_ARCH__ >= 1200
     constexpr int D             = kCausalPromptHeadDim;
     constexpr int Br            = kCausalPromptNvfp4Br;
     constexpr int Bc            = kCausalPromptNvfp4Bc;
@@ -407,6 +410,9 @@ __launch_bounds__(kCausalPromptNvfp4Threads, 1) void causal_attention_prompt_nvf
     }
     causal_prompt_zero_output_rows<Geometry>(out, q_head, tokens, min(q0 + Br, width), consumer_tid,
                                              kCausalPromptNvfp4ConsumerThreads);
+#else
+    __trap();
+#endif
 }
 
 } // namespace ninfer::ops

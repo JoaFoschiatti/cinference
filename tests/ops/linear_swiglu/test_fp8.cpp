@@ -1,3 +1,5 @@
+// Modified by JoaFoschiatti for Cinference sm_86: skip FP8, NVFP4 and K8V4 routes on sm_86.
+
 #include "core/weight.h"
 #include "ops/linear_swiglu/linear_swiglu_test_common.h"
 
@@ -6,6 +8,10 @@
 #include <iostream>
 
 int main() {
+#if NINFER_COMPUTE_CAPABILITY == 86
+    std::cout << "SKIP: FP8 routes are not built for sm_86\n";
+    return 77;
+#endif
     using namespace ninfer;
     using namespace ninfer::test::linear_swiglu;
 

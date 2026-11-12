@@ -1,3 +1,5 @@
+// Modified by JoaFoschiatti for Cinference sm_86: use dynamic shared memory above the static limit.
+
 #pragma once
 
 // Q8G32 RowSplit x BF16 Tensor Core GEMM.
@@ -8,6 +10,7 @@
 // shared tile; x uses a two-stage cp.async pipeline. Tensor Cores execute
 // m16n8k16 BF16 MMA with FP32 accumulation.
 
+#include "core/device.h"
 #include "ops/common/mma.cuh"
 #include "ops/common/math.cuh"
 #include "ops/common/memory.cuh"
@@ -83,6 +86,26 @@ __device__ __forceinline__ int q8_g32_swz64(int row, int col) {
     return (((col >> 3) ^ (row & 7)) << 3) | (col & 7);
 }
 
+template <class Cfg>
+struct Q8RowSplitMmaOperandStorage {
+    alignas(16) __nv_bfloat16 weights[Cfg::BM * Cfg::BK];
+    alignas(16) __nv_bfloat16 activations[Cfg::ACTIVATION_STAGES][Cfg::BN * Cfg::BK];
+    alignas(16) std::uint8_t codes[Cfg::BM * Cfg::BK];
+    alignas(16) std::uint8_t scales[Cfg::BM * Cfg::SCALE_CACHE_BYTES];
+};
+
+template <class Cfg, Q8Epilogue Epilogue>
+union Q8RowSplitMmaSharedStorage {
+    Q8RowSplitMmaOperandStorage<Cfg> operands;
+    float projected[Epilogue == Q8Epilogue::Residual ? Cfg::BM * Cfg::BN : 1];
+};
+
+template <class Cfg, Q8Epilogue Epilogue>
+inline constexpr int kQ8RowSplitMmaDynamicSharedBytes =
+    static_cast<int>(sizeof(Q8RowSplitMmaSharedStorage<Cfg, Epilogue>)) > kMaxStaticSharedBytes
+        ? static_cast<int>(sizeof(Q8RowSplitMmaSharedStorage<Cfg, Epilogue>))
+        : 0;
+
 template <class Cfg, bool Full, Q8Epilogue Epilogue = Q8Epilogue::Store,
           class Output = Q8ContiguousOutput>
 __global__ __launch_bounds__(Cfg::THREADS, Cfg::MIN_BLOCKS) void q8_rowsplit_gemm_mma_kernel(
@@ -103,20 +126,14 @@ __global__ __launch_bounds__(Cfg::THREADS, Cfg::MIN_BLOCKS) void q8_rowsplit_gem
     static_assert(!kSwiGlu || Cfg::WARPS_M == 1 || Cfg::WARPS_M == 2,
                   "SwiGLU supports warp-local or shared-memory row pairing");
 
-    struct OperandStorage {
-        alignas(16) __nv_bfloat16 weights[BM * BK];
-        alignas(16) __nv_bfloat16 activations[Cfg::ACTIVATION_STAGES][BN * BK];
-        alignas(16) std::uint8_t codes[BM * BK];
-        alignas(16) std::uint8_t scales[BM * Cfg::SCALE_CACHE_BYTES];
-    };
-
-    union SharedStorage {
-        OperandStorage operands;
-        float projected[Epilogue == Q8Epilogue::Residual ? BM * BN : 1];
-    };
+    using SharedStorage = Q8RowSplitMmaSharedStorage<Cfg, Epilogue>;
 
     static_assert(sizeof(SharedStorage) <= 99 * 1024);
-    __shared__ __align__(16) SharedStorage shared;
+    constexpr bool kDynamicShared = kQ8RowSplitMmaDynamicSharedBytes<Cfg, Epilogue> != 0;
+    __shared__ __align__(16) unsigned char static_shared[kDynamicShared ? 1 : sizeof(SharedStorage)];
+    extern __shared__ __align__(16) unsigned char dynamic_shared[];
+    auto& shared =
+        *reinterpret_cast<SharedStorage*>(kDynamicShared ? dynamic_shared : static_shared);
     auto& As = shared.operands.weights;
     auto& Bs = shared.operands.activations;
     auto& Cr = shared.operands.codes;
@@ -521,6 +538,24 @@ __global__ __launch_bounds__(Cfg::THREADS, Cfg::MIN_BLOCKS) void q8_rowsplit_gem
             }
         }
     }
+}
+
+template <class Cfg, bool Full, Q8Epilogue Epilogue = Q8Epilogue::Store,
+          class Output = Q8ContiguousOutput>
+void launch_q8_rowsplit_gemm_mma(dim3 grid, cudaStream_t stream, const __nv_bfloat16* x,
+                                 const std::uint8_t* codes, const std::uint8_t* scales,
+                                 Output output, std::int32_t m, std::int32_t k, std::int32_t n,
+                                 std::int32_t padded_k) {
+    constexpr int kSharedBytes = kQ8RowSplitMmaDynamicSharedBytes<Cfg, Epilogue>;
+    if constexpr (kSharedBytes > 0) {
+        static const cudaError_t attribute =
+            cudaFuncSetAttribute(q8_rowsplit_gemm_mma_kernel<Cfg, Full, Epilogue, Output>,
+                                 cudaFuncAttributeMaxDynamicSharedMemorySize, kSharedBytes);
+        CUDA_CHECK(attribute);
+    }
+    q8_rowsplit_gemm_mma_kernel<Cfg, Full, Epilogue, Output>
+        <<<grid, Cfg::THREADS, kSharedBytes, stream>>>(x, codes, scales, output, m, k, n,
+                                                       padded_k);
 }
 
 } // namespace ninfer::ops::detail

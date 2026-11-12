@@ -1,3 +1,5 @@
+// Modified by JoaFoschiatti for Cinference sm_86: launch through the Q8 opt-in launchers.
+
 #include "ops/linear/q8/q8_shapes.h"
 #include "ops/linear/q8/q8_ksplit_launch.cuh"
 #include "ops/linear/q8/q8_rowsplit_gemm_mma.cuh"
@@ -21,8 +23,9 @@ void launch_tiled(const Tensor& x, const Weight& weight, Tensor& out, cudaStream
     using Schedule = Q8RowSplitMmaGemmSchedule<Rows, 64, 16, 16, 1, 2, 128, 1>;
     const dim3 grid(weight.n / Rows, (x.ne[1] + 63) / 64);
     const Q8ContiguousOutput output{static_cast<__nv_bfloat16*>(out.data), weight.n};
-    q8_rowsplit_gemm_mma_kernel<Schedule, false><<<grid, Schedule::THREADS, 0, stream>>>(
-        static_cast<const __nv_bfloat16*>(x.data), static_cast<const std::uint8_t*>(weight.qdata),
+    launch_q8_rowsplit_gemm_mma<Schedule, false>(
+        grid, stream, static_cast<const __nv_bfloat16*>(x.data),
+        static_cast<const std::uint8_t*>(weight.qdata),
         static_cast<const std::uint8_t*>(weight.scales), output, weight.n, weight.k, x.ne[1],
         weight.padded_shape[1]);
     CUDA_CHECK(cudaGetLastError());

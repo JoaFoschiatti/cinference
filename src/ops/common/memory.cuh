@@ -1,4 +1,5 @@
 // Modified by satellitedown for Cinference: L2 policies, evict-last stores, discards, prefetch.
+// Modified by JoaFoschiatti for Cinference sm_86: add the build's static shared-memory limit.
 // See NOTICE and upstream-provenance.json for upstream attribution.
 
 #pragma once
@@ -9,6 +10,12 @@
 #include <cstdint>
 
 namespace ninfer::ops {
+
+#if NINFER_COMPUTE_CAPABILITY == 86
+inline constexpr int kMaxStaticSharedBytes = 48 * 1024;
+#else
+inline constexpr int kMaxStaticSharedBytes = 99 * 1024;
+#endif
 
 enum class Cache { ca, cg };
 
