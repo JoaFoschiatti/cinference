@@ -1,3 +1,5 @@
+// Modified by JoaFoschiatti for Cinference sm_86: use the int8 KV cache on sm_86.
+
 #include "core/device.h"
 #include "models/qwen3_5/load.h"
 #include "models/qwen3_5/execution/parameters.h"
@@ -11,6 +13,12 @@
 #include <iostream>
 #include <stdexcept>
 #include <utility>
+
+#if NINFER_COMPUTE_CAPABILITY == 86
+constexpr ninfer::KvCacheStorage kTestKvCache = ninfer::KvCacheStorage::Int8Group64;
+#else
+constexpr ninfer::KvCacheStorage kTestKvCache = ninfer::KvCacheStorage::Fp8E4M3Row256;
+#endif
 
 int main() {
     namespace qwen       = ninfer::models::qwen3_5;
@@ -40,7 +48,7 @@ int main() {
             options.max_context         = max_context;
             options.kv_capacity         = ninfer::KvCapacityPolicy::explicit_capacity(max_context);
             options.prefill_chunk       = 1024;
-            options.kv_cache            = ninfer::KvCacheStorage::Fp8E4M3Row256;
+            options.kv_cache            = kTestKvCache;
             options.speculative.backend = ninfer::SpeculativeBackend::Mtp;
             options.speculative.draft_tokens         = 3;
             options.speculative.proposal_head        = ninfer::ProposalHead::Optimized;

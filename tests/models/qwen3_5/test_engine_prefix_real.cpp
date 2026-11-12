@@ -1,3 +1,5 @@
+// Modified by JoaFoschiatti for Cinference sm_86: use the int8 KV cache on sm_86.
+
 #include "ninfer/engine.h"
 
 #include <cstdint>
@@ -10,6 +12,12 @@
 #include <string_view>
 #include <utility>
 #include <vector>
+
+#if NINFER_COMPUTE_CAPABILITY == 86
+constexpr ninfer::KvCacheStorage kTestKvCache = ninfer::KvCacheStorage::Int8Group64;
+#else
+constexpr ninfer::KvCacheStorage kTestKvCache = ninfer::KvCacheStorage::Fp8E4M3Row256;
+#endif
 
 namespace {
 
@@ -94,7 +102,7 @@ ninfer::EngineOptions shared_rewrite_materialization_engine_options(const char* 
     options.max_context                      = 100000;
     options.kv_capacity                      = ninfer::KvCapacityPolicy::explicit_capacity(100000);
     options.prefill_chunk                    = 1024;
-    options.kv_cache                         = ninfer::KvCacheStorage::Fp8E4M3Row256;
+    options.kv_cache                         = kTestKvCache;
     options.speculative.backend              = ninfer::SpeculativeBackend::Mtp;
     options.speculative.draft_tokens         = 3;
     options.speculative.proposal_head        = ninfer::ProposalHead::Optimized;
@@ -173,7 +181,7 @@ ninfer::EngineOptions pressure_resume_engine_options(const char* artifact) {
     options.max_context                      = 8192;
     options.kv_capacity                      = ninfer::KvCapacityPolicy::explicit_capacity(8192);
     options.prefill_chunk                    = 1024;
-    options.kv_cache                         = ninfer::KvCacheStorage::Fp8E4M3Row256;
+    options.kv_cache                         = kTestKvCache;
     options.speculative.backend              = ninfer::SpeculativeBackend::None;
     options.max_concurrency                  = 2;
     options.max_pending_requests             = 2;
@@ -192,7 +200,7 @@ ninfer::EngineOptions private_checkpoint_pressure_engine_options(const char* art
     options.max_context                      = 8192;
     options.kv_capacity                      = ninfer::KvCapacityPolicy::explicit_capacity(16384);
     options.prefill_chunk                    = 1024;
-    options.kv_cache                         = ninfer::KvCacheStorage::Fp8E4M3Row256;
+    options.kv_cache                         = kTestKvCache;
     options.speculative.backend              = ninfer::SpeculativeBackend::None;
     options.max_concurrency                  = 2;
     options.max_pending_requests             = 2;

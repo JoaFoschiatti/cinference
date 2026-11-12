@@ -1,3 +1,5 @@
+// Modified by JoaFoschiatti for Cinference sm_86: use the int8 KV cache on sm_86.
+
 #include "ninfer/engine.h"
 
 #include <algorithm>
@@ -6,6 +8,12 @@
 #include <iostream>
 #include <string>
 #include <vector>
+
+#if NINFER_COMPUTE_CAPABILITY == 86
+constexpr ninfer::KvCacheStorage kTestKvCache = ninfer::KvCacheStorage::Int8Group64;
+#else
+constexpr ninfer::KvCacheStorage kTestKvCache = ninfer::KvCacheStorage::Fp8E4M3Row256;
+#endif
 
 int main() {
     const char* artifact = std::getenv("NINFER_TEST_ARTIFACT");
@@ -18,7 +26,7 @@ int main() {
     options.artifact_path = artifact;
     options.purpose       = ninfer::EnginePurpose::CausalScoring;
     options.max_context   = 2048;
-    options.kv_cache      = ninfer::KvCacheStorage::Fp8E4M3Row256;
+    options.kv_cache      = kTestKvCache;
     ninfer::Engine engine(options);
     const auto& effective = engine.options();
     if (effective.max_concurrency != 1 || effective.prefill_chunk != 1024 ||
@@ -26,7 +34,7 @@ int main() {
         effective.kv_capacity.explicit_tokens != effective.max_context ||
         effective.context_cache.enabled ||
         effective.speculative.backend != ninfer::SpeculativeBackend::None ||
-        effective.kv_cache != ninfer::KvCacheStorage::Fp8E4M3Row256) {
+        effective.kv_cache != kTestKvCache) {
         std::cerr << "causal scoring options were not normalized correctly\n";
         return 1;
     }
